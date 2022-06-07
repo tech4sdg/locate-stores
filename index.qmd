@@ -1,0 +1,39 @@
+---
+title: "Untitled"
+format: html
+---
+
+
+
+```{r}
+library(rvest)
+library(tidyverse)
+library(sf)
+
+tab <- read_html("Zeelab pharmacy _ Store Locator.html") %>%
+  html_element(".comparison.Table.tblComparison") %>%
+  html_table() 
+  
+
+hrefs <- read_html("Zeelab pharmacy _ Store Locator.html") %>%
+  html_element(".comparison.Table.tblComparison") %>%
+  html_elements("tr") %>%
+  html_elements("a") %>%
+  html_attr("href")
+
+
+hrefs_google <- hrefs[str_detect(hrefs, "google\\.com")]
+
+locs <- tibble(raw = hrefs_google) %>%
+  mutate(loc1 = str_match(raw, "@(\\d+\\.\\d+,\\d+\\.\\d+)")[,2]) %>%
+  select(loc1) %>%
+  separate(loc1, c("lat","lon"),",") 
+
+
+locs_sf <- st_as_sf(filter(locs, !is.na(lat)), coords = c("lon", "lat"), crs = 4326)
+
+mapview::mapview(locs_sf)
+
+
+```
+
