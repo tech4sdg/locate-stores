@@ -1,39 +1,71 @@
 ---
-title: "Untitled"
+title: "Standorte der Zeelabs Apotheken"
 format: html
 ---
 
+Um die Standorte der [Zeelab Apotheken](https://zeelabpharmacy.com/store-locator) zu ermitteln, habe ich zuerst unter dem gegebenen Link so lange auf "Load More" gelickt bis keine weiteren stores mehr kamen. Die Webseite habe ich dann als HTML gespeichert (`Zeelab pharmacy _ Store Locator.html`). Daraus konnte ich dann die entsprechende Tabelle extrahieren.  
 
-
-```{r}
+```{r message=FALSE, warning=FALSE}
 library(rvest)
 library(tidyverse)
 library(sf)
+```
 
+
+```{r}
 tab <- read_html("Zeelab pharmacy _ Store Locator.html") %>%
   html_element(".comparison.Table.tblComparison") %>%
   html_table() 
   
 
-hrefs <- read_html("Zeelab pharmacy _ Store Locator.html") %>%
+df <- read_html("Zeelab pharmacy _ Store Locator.html") %>%
   html_element(".comparison.Table.tblComparison") %>%
-  html_elements("tr") %>%
-  html_elements("a") %>%
-  html_attr("href")
+  html_elements("tr") %>% # kein html_table da ansonsten die href attribute verschwinden
+  map_dfr(function(x){
+    tds <- x %>%
+      html_elements("td")
+    
+    tibble(
+      name = html_text(tds[2]),
+      address = html_text(tds[3]),
+      phone =   html_text(tds[4]),
+      google = html_attr(html_element(tds[5], "a"), "href")
+    )
+  })
+
+df2 <- df %>%
+  mutate(
+    address = str_trim(str_remove(str_remove(str_trim(address), "View$"), "\\d+$")),
+    phone = str_trim(phone),
+    loc = str_match(google, "@(\\d+\\.\\d+,\\d+\\.\\d+)")[,2]
+  ) %>%
+  separate(loc, c("loc1","loc2"),",") 
 
 
-hrefs_google <- hrefs[str_detect(hrefs, "google\\.com")]
+address_df <- map_dfr(str_split(df2$address, "\\n"), function(x){
+  len <- length(x)
+  x <- str_trim(x)
+  tibble(
+    zeile1 = paste(x[1:(len-3)], collapse = "\n"),
+    city = x[(len-2)],
+    pincode = x[(len-1)],
+    state = x[len]
+  )
+})
 
-locs <- tibble(raw = hrefs_google) %>%
-  mutate(loc1 = str_match(raw, "@(\\d+\\.\\d+,\\d+\\.\\d+)")[,2]) %>%
-  select(loc1) %>%
-  separate(loc1, c("lat","lon"),",") 
+df3 <- cbind(df2, address_df)
 
+df4 <- filter(df3, !is.na(loc1))
 
-locs_sf <- st_as_sf(filter(locs, !is.na(lat)), coords = c("lon", "lat"), crs = 4326)
+locs_sf <- st_as_sf(df4, coords = c("loc2", "loc1"), crs = 4326)
 
 mapview::mapview(locs_sf)
 
+```
+
+
+```{r}
+st_write(locs_sf, "zeelab_locations.gpkg", delete_dsn = TRUE)
 
 ```
 
